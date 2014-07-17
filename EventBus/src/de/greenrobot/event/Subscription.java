@@ -15,20 +15,25 @@
  */
 package de.greenrobot.event;
 
+import java.util.Set;
+
+
 final class Subscription {
     final Object subscriber;
     final SubscriberMethod subscriberMethod;
     final int priority;
+    final Set<Integer> handlerEventIds;
     /**
      * Becomes false as soon as {@link EventBus#unregister(Object)} is called, which is checked by queued event delivery
      * {@link EventBus#invokeSubscriber(PendingPost)} to prevent race conditions.
      */
     volatile boolean active;
 
-    Subscription(Object subscriber, SubscriberMethod subscriberMethod, int priority) {
+    Subscription(Object subscriber, SubscriberMethod subscriberMethod, int priority,Set<Integer> handlerEventIds) {
         this.subscriber = subscriber;
         this.subscriberMethod = subscriberMethod;
         this.priority = priority;
+        this.handlerEventIds = handlerEventIds;
         active = true;
     }
 
@@ -46,5 +51,15 @@ final class Subscription {
     @Override
     public int hashCode() {
         return subscriber.hashCode() + subscriberMethod.methodString.hashCode();
+    }
+    
+    public boolean canHandleEventId(int eventId){
+        if(handlerEventIds == null)
+            return false;
+        return (handlerEventIds.contains(eventId));
+    }
+    
+    public boolean canHandleEventId(){
+        return (handlerEventIds != null && handlerEventIds.size()>0);
     }
 }

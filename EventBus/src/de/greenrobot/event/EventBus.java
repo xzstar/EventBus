@@ -20,6 +20,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
@@ -51,7 +52,7 @@ public class EventBus {
     private final Map<Class<?>, CopyOnWriteArrayList<Subscription>> subscriptionsByEventType;
     private final Map<Object, List<Class<?>>> typesBySubscriber;
     private final Map<Class<?>, Object> stickyEvents;
-
+    
     private final ThreadLocal<PostingThreadState> currentPostingThreadState = new ThreadLocal<PostingThreadState>() {
         @Override
         protected PostingThreadState initialValue() {
@@ -140,6 +141,10 @@ public class EventBus {
         register(subscriber, DEFAULT_METHOD_NAME, false, 0);
     }
 
+    public void register(Object subscriber,Set<Integer> handleEvent){
+        register(subscriber, DEFAULT_METHOD_NAME, false, 0,handleEvent);
+
+    }
     /**
      * Like {@link #register(Object)} with an additional subscriber priority to influence the order of event delivery.
      * Within the same delivery thread ({@link ThreadMode}), higher priority subscribers will receive events before
@@ -186,10 +191,17 @@ public class EventBus {
         List<SubscriberMethod> subscriberMethods = subscriberMethodFinder.findSubscriberMethods(subscriber.getClass(),
                 methodName);
         for (SubscriberMethod subscriberMethod : subscriberMethods) {
-            subscribe(subscriber, subscriberMethod, sticky, priority);
+            subscribe(subscriber, subscriberMethod, sticky, priority,null);
         }
     }
 
+    private synchronized void register(Object subscriber, String methodName, boolean sticky, int priority,Set<Integer>handleEvent) {
+        List<SubscriberMethod> subscriberMethods = subscriberMethodFinder.findSubscriberMethods(subscriber.getClass(),
+                methodName);
+        for (SubscriberMethod subscriberMethod : subscriberMethods) {
+            subscribe(subscriber, subscriberMethod, sticky, priority,handleEvent);
+        }
+    }
     /**
      * @deprecated For simplification of the API, this method will be removed in the future.
      */
@@ -229,11 +241,11 @@ public class EventBus {
                 methodName);
         for (SubscriberMethod subscriberMethod : subscriberMethods) {
             if (eventType == subscriberMethod.eventType) {
-                subscribe(subscriber, subscriberMethod, sticky, 0);
+                subscribe(subscriber, subscriberMethod, sticky, 0,null);
             } else if (moreEventTypes != null) {
                 for (Class<?> eventType2 : moreEventTypes) {
                     if (eventType2 == subscriberMethod.eventType) {
-                        subscribe(subscriber, subscriberMethod, sticky, 0);
+                        subscribe(subscriber, subscriberMethod, sticky, 0,null);
                         break;
                     }
                 }
@@ -242,11 +254,11 @@ public class EventBus {
     }
 
     // Must be called in synchronized block
-    private void subscribe(Object subscriber, SubscriberMethod subscriberMethod, boolean sticky, int priority) {
+    private void subscribe(Object subscriber, SubscriberMethod subscriberMethod, boolean sticky, int priority,Set<Integer> handleEvent) {
         subscribed = true;
         Class<?> eventType = subscriberMethod.eventType;
         CopyOnWriteArrayList<Subscription> subscriptions = subscriptionsByEventType.get(eventType);
-        Subscription newSubscription = new Subscription(subscriber, subscriberMethod, priority);
+        Subscription newSubscription = new Subscription(subscriber, subscriberMethod, priority,handleEvent);
         if (subscriptions == null) {
             subscriptions = new CopyOnWriteArrayList<Subscription>();
             subscriptionsByEventType.put(eventType, subscriptions);
@@ -348,6 +360,12 @@ public class EventBus {
 
     /** Posts the given event to the event bus. */
     public void post(Object event) {
+        post(event,Integer.MIN_VALUE);
+    }
+
+    
+    /** Posts the given event to the event bus. */
+    public void post(Object event,int eventId) {
         PostingThreadState postingState = currentPostingThreadState.get();
         List<Object> eventQueue = postingState.eventQueue;
         eventQueue.add(event);
@@ -362,7 +380,7 @@ public class EventBus {
             }
             try {
                 while (!eventQueue.isEmpty()) {
-                    postSingleEvent(eventQueue.remove(0), postingState);
+                    postSingleEvent(eventQueue.remove(0), postingState,eventId);
                 }
             } finally {
                 postingState.isPosting = false;
@@ -370,7 +388,7 @@ public class EventBus {
             }
         }
     }
-
+    
     /**
      * Called from a subscriber's event handling method, further event delivery will be canceled. Subsequent subscribers
      * won't receive the event. Events are usually canceled by higher priority subscribers (see
@@ -454,8 +472,8 @@ public class EventBus {
             stickyEvents.clear();
         }
     }
-
-    private void postSingleEvent(Object event, PostingThreadState postingState) throws Error {
+    
+    private void postSingleEvent(Object event, PostingThreadState postingState, int eventId) throws Error {
         Class<? extends Object> eventClass = event.getClass();
         List<Class<?>> eventTypes = findEventTypes(eventClass);
         boolean subscriptionFound = false;
@@ -468,6 +486,13 @@ public class EventBus {
             }
             if (subscriptions != null && !subscriptions.isEmpty()) {
                 for (Subscription subscription : subscriptions) {
+                    
+                    // check the eventId
+                    if(eventId != Integer.MIN_VALUE && subscription.canHandleEventId(eventId) == false)
+                        continue;
+                    else if (eventId == Integer.MIN_VALUE && subscription.canHandleEventId())
+                        continue;
+                    
                     postingState.event = event;
                     postingState.subscription = subscription;
                     boolean aborted = false;
