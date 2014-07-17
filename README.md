@@ -27,7 +27,8 @@ Make sure eventId should not be Integer.MIN_VALUE.
 1. Implement any number of event handling methods in the subscriber:<br/>
 <code>public void onEvent(AnyEventType event) {}</code>
 2. Register subscribers:<br/>
-<code>eventBus.register(this, Set<Integer> handlerEvents);</code>
+Set<Integer> handlerEvents;
+<code>eventBus.register(this,  handlerEvents);</code>
 3. Post events to the bus:<br/>
 <code>eventBus.post(event,eventid);</code>
 4. Unregister subscriber:<br/>
